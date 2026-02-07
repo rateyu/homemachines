@@ -1,0 +1,180 @@
+# HomeMachines
+
+A single-script tool to **wake**, **sleep**, **check status**, and **SSH tunnel** into your home machines — across subnets, through jump hosts.
+
+## Features
+
+- **Wake-on-LAN** — Wake machines directly or through a jump host
+- **Sleep/Hibernate** — Suspend Linux (`systemctl suspend`) or hibernate Windows (`shutdown /h`) remotely
+- **Status Check** — Ping + SSH fallback for ICMP-blocked hosts; distinguishes "offline" from "jump host unreachable"
+- **SSH Tunnel** — Local/remote port forwarding and SOCKS5 proxy with preset support
+- **Jump Host Aware** — Automatically wakes jump host first; sleeps dependents before jump host
+- **Startup Validation** — Catches invalid MAC addresses before they cause cryptic errors
+
+## Requirements
+
+- Python 3.7+
+- SSH client (with key-based auth configured to target machines)
+- No third-party Python packages needed
+
+## Quick Start
+
+### 1. Clone
+
+```bash
+git clone https://github.com/rateyu/homemachines.git
+cd homemachines
+```
+
+### 2. Create config
+
+Copy the example and fill in your real machine info:
+
+```bash
+cp machines.example.json machines.json
+```
+
+Edit `machines.json`:
+
+```json
+{
+  "machines": {
+    "my-pc": {
+      "mac": "AA:BB:CC:DD:EE:FF",
+      "ip": "192.168.0.100",
+      "os": "windows",
+      "ssh_user": "your_user",
+      "ssh_port": 22,
+      "broadcast": "192.168.0.255"
+    },
+    "my-linux": {
+      "mac": "11:22:33:44:55:66",
+      "ip": "192.168.1.100",
+      "os": "linux",
+      "ssh_user": "your_user",
+      "ssh_port": 22,
+      "broadcast": "192.168.1.255",
+      "jump_host": "my-pc",
+      "tunnels": {
+        "jupyter": "-L 8888:127.0.0.1:8888",
+        "web": "-L 8080:127.0.0.1:80",
+        "proxy": "-D 1080"
+      }
+    }
+  }
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `mac` | Yes | MAC address for WOL (format: `AA:BB:CC:DD:EE:FF`) |
+| `ip` | Yes | IP address of the machine |
+| `os` | Yes | `linux` or `windows` |
+| `ssh_user` | Yes | SSH username |
+| `ssh_port` | Yes | SSH port (usually `22`) |
+| `broadcast` | Yes | Broadcast address for WOL |
+| `jump_host` | No | Name of another machine to use as SSH jump host |
+| `tunnels` | No | Predefined SSH tunnel presets |
+
+### 3. Use
+
+```bash
+python home_machines.py status all       # Check all machines
+python home_machines.py wake my-linux    # Wake a machine
+python home_machines.py sleep my-linux   # Suspend a machine
+python home_machines.py help             # Show full help
+```
+
+## Commands
+
+### status
+
+```bash
+python home_machines.py status all
+python home_machines.py status my-linux
+```
+
+Output examples:
+```
+  my-pc       192.168.0.100   ONLINE
+  my-linux    192.168.1.100   ONLINE (via my-pc)
+  my-linux    192.168.1.100   UNKNOWN (jump host my-pc offline)
+  my-linux    192.168.1.100   OFFLINE
+```
+
+### wake
+
+```bash
+python home_machines.py wake all         # Wake all machines
+python home_machines.py wake my-linux    # Wake a specific machine
+```
+
+If the target requires a jump host, the script will automatically wake the jump host first and wait for it to come online.
+
+### sleep
+
+```bash
+python home_machines.py sleep all        # Sleep all (correct order)
+python home_machines.py sleep my-linux   # Sleep a specific machine
+```
+
+When sleeping all machines, dependents are automatically suspended before their jump hosts.
+
+### tunnel
+
+```bash
+# Local forwarding (access remote service locally)
+python home_machines.py tunnel my-linux -L 8888:127.0.0.1:8888
+
+# Remote forwarding (expose local service to remote)
+python home_machines.py tunnel my-linux -R 9090:localhost:3000
+
+# SOCKS5 proxy
+python home_machines.py tunnel my-linux -D 1080
+
+# Use a predefined preset
+python home_machines.py tunnel my-linux --preset jupyter
+
+# Multiple presets at once
+python home_machines.py tunnel my-linux --preset jupyter,web
+
+# List available presets
+python home_machines.py tunnel my-linux --list
+```
+
+Press `Ctrl+C` to close the tunnel.
+
+## Tips
+
+### Shell alias
+
+Add to your `~/.zshrc` or `~/.bashrc` for quick access:
+
+```bash
+alias hm='python3 /path/to/home_machines.py'
+```
+
+Then use: `hm status all`, `hm wake my-linux`, etc.
+
+### Linux sleep without password prompt
+
+If `sleep` on a Linux machine asks for a sudo password, configure passwordless sudo for that command:
+
+```bash
+# On the Linux machine:
+echo 'your_user ALL=(ALL) NOPASSWD: /usr/bin/systemctl suspend' | sudo tee /etc/sudoers.d/suspend
+sudo chmod 440 /etc/sudoers.d/suspend
+```
+
+### Windows WOL not working
+
+If a Windows machine doesn't wake up, check:
+
+1. **BIOS/UEFI** — Enable "Wake on LAN" / "Wake on PCI-E"
+2. **Network adapter** — Enable "Wake on Magic Packet" in adapter advanced properties
+3. **Power management** — Uncheck "Allow the computer to turn off this device to save power"
+4. **Verify MAC** — Run `ipconfig /all` and confirm it matches your config
+
+## License
+
+MIT

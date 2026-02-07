@@ -1,0 +1,26 @@
+{
+  "machines": {
+    "my-pc": {
+      "mac": "AA:BB:CC:DD:EE:FF",
+      "ip": "192.168.0.100",
+      "os": "windows",
+      "ssh_user": "your_user",
+      "ssh_port": 22,
+      "broadcast": "192.168.0.255"
+    },
+    "my-linux": {
+      "mac": "11:22:33:44:55:66",
+      "ip": "192.168.1.100",
+      "os": "linux",
+      "ssh_user": "your_user",
+      "ssh_port": 22,
+      "broadcast": "192.168.1.255",
+      "jump_host": "my-pc",
+      "tunnels": {
+        "jupyter": "-L 8888:127.0.0.1:8888",
+        "web": "-L 8080:127.0.0.1:80",
+        "proxy": "-D 1080"
+      }
+    }
+  }
+}
