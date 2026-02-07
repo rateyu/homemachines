@@ -146,34 +146,53 @@ Press `Ctrl+C` to close the tunnel.
 
 ## Tips
 
-### Shell alias
+### 配置 Shell 别名，快捷使用
 
-Add to your `~/.zshrc` or `~/.bashrc` for quick access:
+每次都要进入项目目录再输入 `python home_machines.py ...` 非常繁琐。配置 alias 后，在任意目录都可以用简短命令操作。
+
+在 `~/.zshrc`（macOS/Linux zsh）或 `~/.bashrc`（Linux bash）末尾添加：
 
 ```bash
+# 家庭机器管理 - 快捷命令
 alias hm='python3 /path/to/home_machines.py'
+
+# SSH 快捷连接（按需添加，替换为你的实际 IP 和用户名）
+alias ssh-pc='ssh your_user@192.168.0.100'
+alias ssh-linux='ssh your_user@192.168.1.100'
 ```
 
-Then use: `hm status all`, `hm wake my-linux`, etc.
-
-### Linux sleep without password prompt
-
-If `sleep` on a Linux machine asks for a sudo password, configure passwordless sudo for that command:
+保存后执行 `source ~/.zshrc` 使其生效。之后即可在任意目录使用：
 
 ```bash
-# On the Linux machine:
+hm status all           # 查看所有机器状态
+hm wake my-linux        # 唤醒指定机器
+hm sleep all            # 休眠所有机器（自动处理顺序）
+hm tunnel my-linux --preset jupyter   # 建立隧道
+
+ssh-pc                  # 快捷 SSH 登录
+ssh-linux               # 快捷 SSH 登录
+```
+
+### Linux 休眠免密码配置
+
+远程执行 `sudo systemctl suspend` 时，如果提示需要密码，需要在目标 Linux 机器上配置免密 sudo：
+
+```bash
+# 登录到目标 Linux 机器后执行（将 your_user 替换为你的用户名）：
 echo 'your_user ALL=(ALL) NOPASSWD: /usr/bin/systemctl suspend' | sudo tee /etc/sudoers.d/suspend
 sudo chmod 440 /etc/sudoers.d/suspend
 ```
 
-### Windows WOL not working
+配置后即可通过脚本自动休眠，无需手动输入密码。
 
-If a Windows machine doesn't wake up, check:
+### Windows 唤醒（WOL）不生效
 
-1. **BIOS/UEFI** — Enable "Wake on LAN" / "Wake on PCI-E"
-2. **Network adapter** — Enable "Wake on Magic Packet" in adapter advanced properties
-3. **Power management** — Uncheck "Allow the computer to turn off this device to save power"
-4. **Verify MAC** — Run `ipconfig /all` and confirm it matches your config
+如果 Windows 机器发送 WOL 后没有唤醒，请逐项检查：
+
+1. **BIOS/UEFI** — 进入 BIOS，确认 `Wake on LAN` / `Wake on PCI-E` 已开启
+2. **网卡高级属性** — 设备管理器 → 网卡 → 高级 → 启用 "Wake on Magic Packet"
+3. **电源管理** — 设备管理器 → 网卡 → 电源管理 → 取消勾选 "允许计算机关闭此设备以节约电源"
+4. **确认 MAC 地址** — 在 Windows 上运行 `ipconfig /all`，核对配置文件中的 MAC 是否一致
 
 ## License
 
