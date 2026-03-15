@@ -14,7 +14,10 @@ A single-script tool to **wake**, **sleep**, **check status**, and **SSH tunnel*
 ## Requirements
 
 - Python 3.7+
-- SSH client (with key-based auth configured to target machines)
+- SSH client
+- `sshpass` — only required for machines without SSH key trust (password auth)
+  - macOS: `brew install hudochenkov/sshpass/sshpass`
+  - Linux: `sudo apt install sshpass` / `sudo yum install sshpass`
 - No third-party Python packages needed
 
 ## Quick Start
@@ -74,6 +77,7 @@ Edit `machines.json`:
 | `ssh_port` | Yes | SSH port (usually `22`) |
 | `broadcast` | Yes | Broadcast address for WOL |
 | `jump_host` | No | Name of another machine to use as SSH jump host |
+| `ssh_password` | No | SSH password (if no key trust); requires `sshpass` installed |
 | `tunnels` | No | Predefined SSH tunnel presets |
 
 ### 3. Use

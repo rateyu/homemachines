@@ -31,6 +31,13 @@ def load_config():
 
 def validate_config(machines):
     """Validate config on startup. Exit with clear message if invalid."""
+    needs_sshpass = any(m.get("ssh_password") for m in machines.values())
+    if needs_sshpass and not _sshpass_available():
+        print("Warning: one or more machines use 'ssh_password' but sshpass is not installed.")
+        print("  macOS:  brew install hudochenkov/sshpass/sshpass")
+        print("  Linux:  sudo apt install sshpass  or  sudo yum install sshpass")
+        print()
+
     for name, cfg in machines.items():
         mac = cfg.get("mac", "")
         clean = mac.replace(":", "").replace("-", "")
@@ -85,14 +92,38 @@ def ping(ip):
         return False
 
 
-def ssh_alive(ip, user, port):
-    """Check if a host is reachable via SSH (fallback when ping/ICMP is blocked)."""
+def _sshpass_available():
+    """Check if sshpass is installed."""
     try:
-        result = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
-             "-o", "BatchMode=yes", "-p", str(port), f"{user}@{ip}", "echo ok"],
-            capture_output=True, timeout=10,
-        )
+        subprocess.run(["sshpass", "-V"], capture_output=True, timeout=3)
+        return True
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def _build_proxy_command(jh_info):
+    """Build ProxyCommand string for a jump host (supports password-auth jump hosts)."""
+    base = (
+        f"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10"
+        f" -W %h:%p -p {jh_info['port']} {jh_info['user']}@{jh_info['ip']}"
+    )
+    jh_pass = jh_info.get("password")
+    if jh_pass:
+        return f"sshpass -p {jh_pass} {base}"
+    return f"{base} -o BatchMode=yes"
+
+
+def ssh_alive(ip, user, port, password=None):
+    """Check if a host is reachable via SSH (fallback when ping/ICMP is blocked)."""
+    if password:
+        cmd = ["sshpass", "-p", password, "ssh",
+               "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
+               "-p", str(port), f"{user}@{ip}", "echo ok"]
+    else:
+        cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
+               "-o", "BatchMode=yes", "-p", str(port), f"{user}@{ip}", "echo ok"]
+    try:
+        result = subprocess.run(cmd, capture_output=True, timeout=10)
         return result.returncode == 0
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return False
@@ -102,10 +133,10 @@ def host_alive(cfg):
     """Check if a host is reachable via ping, falling back to SSH."""
     if ping(cfg["ip"]):
         return True
-    return ssh_alive(cfg["ip"], cfg["ssh_user"], cfg["ssh_port"])
+    return ssh_alive(cfg["ip"], cfg["ssh_user"], cfg["ssh_port"], cfg.get("ssh_password"))
 
 
-def ssh_run(ip, user, port, command, jump_host_info=None):
+def ssh_run(ip, user, port, command, jump_host_info=None, password=None):
     """Run a command on a remote machine via SSH.
 
     Args:
@@ -113,13 +144,22 @@ def ssh_run(ip, user, port, command, jump_host_info=None):
         user: SSH username on target.
         port: SSH port on target.
         command: Command string to execute remotely.
-        jump_host_info: Optional dict with keys ip, user, port for ProxyJump.
+        jump_host_info: Optional dict with keys ip, user, port[, password] for jump host.
+        password: Optional SSH password for the target machine.
     """
-    ssh_cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10"]
-
-    if jump_host_info:
-        jump_str = f"{jump_host_info['user']}@{jump_host_info['ip']}:{jump_host_info['port']}"
-        ssh_cmd += ["-J", jump_str]
+    if password:
+        ssh_cmd = ["sshpass", "-p", password, "ssh",
+                   "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10"]
+        if jump_host_info:
+            ssh_cmd += ["-o", f"ProxyCommand={_build_proxy_command(jump_host_info)}"]
+    else:
+        ssh_cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10"]
+        if jump_host_info:
+            if jump_host_info.get("password"):
+                ssh_cmd += ["-o", f"ProxyCommand={_build_proxy_command(jump_host_info)}"]
+            else:
+                jump_str = f"{jump_host_info['user']}@{jump_host_info['ip']}:{jump_host_info['port']}"
+                ssh_cmd += ["-J", jump_str]
 
     ssh_cmd += ["-p", str(port), f"{user}@{ip}", command]
 
@@ -166,7 +206,10 @@ def resolve_targets(machines, target):
 def get_jump_host_info(machines, jump_host_name):
     """Get connection info for a jump host."""
     jh = machines[jump_host_name]
-    return {"ip": jh["ip"], "user": jh["ssh_user"], "port": jh["ssh_port"]}
+    info = {"ip": jh["ip"], "user": jh["ssh_user"], "port": jh["ssh_port"]}
+    if "ssh_password" in jh:
+        info["password"] = jh["ssh_password"]
+    return info
 
 
 def ping_via_jump(machines, jump_host_name, target_ip):
@@ -180,7 +223,8 @@ def ping_via_jump(machines, jump_host_name, target_ip):
     else:
         cmd = f"ping -c 1 -W 2 {target_ip}"
     try:
-        result = ssh_run(jh["ip"], jh["ssh_user"], jh["ssh_port"], cmd)
+        result = ssh_run(jh["ip"], jh["ssh_user"], jh["ssh_port"], cmd,
+                         password=jh.get("ssh_password"))
         return result.returncode == 0
     except subprocess.TimeoutExpired:
         return False
@@ -258,9 +302,11 @@ def cmd_wake(machines, target):
                 f"print('WOL sent')\""
             )
             jh_info = get_jump_host_info(machines, jump_host_name)
+            jh_pass = jh_cfg.get("ssh_password")
             try:
                 result = ssh_run(
-                    jh_cfg["ip"], jh_cfg["ssh_user"], jh_cfg["ssh_port"], wol_script
+                    jh_cfg["ip"], jh_cfg["ssh_user"], jh_cfg["ssh_port"], wol_script,
+                    password=jh_pass,
                 )
                 if result.returncode == 0:
                     print(f"  {name}: WOL sent via {jump_host_name}")
@@ -269,7 +315,8 @@ def cmd_wake(machines, target):
                     if jh_cfg.get("os") == "windows":
                         ps_cmd = _build_windows_wol_command(mac_hex, broadcast)
                         result = ssh_run(
-                            jh_cfg["ip"], jh_cfg["ssh_user"], jh_cfg["ssh_port"], ps_cmd
+                            jh_cfg["ip"], jh_cfg["ssh_user"], jh_cfg["ssh_port"], ps_cmd,
+                            password=jh_pass,
                         )
                         if result.returncode == 0:
                             print(f"  {name}: WOL sent via {jump_host_name} (powershell)")
@@ -351,6 +398,7 @@ def cmd_sleep(machines, target):
             result = ssh_run(
                 cfg["ip"], cfg["ssh_user"], cfg["ssh_port"], command,
                 jump_host_info=jh_info,
+                password=cfg.get("ssh_password"),
             )
             # suspend/hibernate may kill the SSH session, so returncode != 0 is expected
             if result.returncode == 0 or "closed by remote host" in result.stderr:
@@ -421,13 +469,25 @@ def cmd_tunnel(machines, args):
         sys.exit(1)
 
     # ── build SSH command ──
-    ssh_cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10", "-N"]
-
+    cfg_password = cfg.get("ssh_password")
     jump_host_name = cfg.get("jump_host")
-    if jump_host_name:
-        jh = machines[jump_host_name]
-        jump_str = f"{jh['ssh_user']}@{jh['ip']}:{jh['ssh_port']}"
-        ssh_cmd += ["-J", jump_str]
+
+    if cfg_password:
+        ssh_cmd = ["sshpass", "-p", cfg_password, "ssh",
+                   "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10", "-N"]
+        if jump_host_name:
+            jh_info = get_jump_host_info(machines, jump_host_name)
+            ssh_cmd += ["-o", f"ProxyCommand={_build_proxy_command(jh_info)}"]
+    else:
+        ssh_cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10", "-N"]
+        if jump_host_name:
+            jh_info = get_jump_host_info(machines, jump_host_name)
+            if jh_info.get("password"):
+                ssh_cmd += ["-o", f"ProxyCommand={_build_proxy_command(jh_info)}"]
+            else:
+                jh = machines[jump_host_name]
+                jump_str = f"{jh['ssh_user']}@{jh['ip']}:{jh['ssh_port']}"
+                ssh_cmd += ["-J", jump_str]
 
     ssh_cmd += tunnel_flags
     ssh_cmd += ["-p", str(cfg["ssh_port"]), f"{cfg['ssh_user']}@{cfg['ip']}"]

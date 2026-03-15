@@ -6,7 +6,8 @@
       "os": "windows",
       "ssh_user": "your_user",
       "ssh_port": 22,
-      "broadcast": "192.168.0.255"
+      "broadcast": "192.168.0.255",
+      "_comment_ssh_password": "Optional: set ssh_password if no SSH key trust; requires sshpass installed"
     },
     "my-linux": {
       "mac": "11:22:33:44:55:66",
@@ -14,6 +15,7 @@
       "os": "linux",
       "ssh_user": "your_user",
       "ssh_port": 22,
+      "ssh_password": "your_password_here",
       "broadcast": "192.168.1.255",
       "jump_host": "my-pc",
       "tunnels": {
