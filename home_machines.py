@@ -101,6 +101,15 @@ def _sshpass_available():
         return False
 
 
+def _require_sshpass():
+    """Exit with a clear message if sshpass is not installed."""
+    if not _sshpass_available():
+        print("Error: sshpass is required for password-auth SSH but is not installed.")
+        print("  macOS:  brew install hudochenkov/sshpass/sshpass")
+        print("  Linux:  sudo apt install sshpass  or  sudo yum install sshpass")
+        sys.exit(1)
+
+
 def _build_proxy_command(jh_info):
     """Build ProxyCommand string for a jump host (supports password-auth jump hosts)."""
     base = (
@@ -116,6 +125,7 @@ def _build_proxy_command(jh_info):
 def ssh_alive(ip, user, port, password=None):
     """Check if a host is reachable via SSH (fallback when ping/ICMP is blocked)."""
     if password:
+        _require_sshpass()
         cmd = ["sshpass", "-p", password, "ssh",
                "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
                "-p", str(port), f"{user}@{ip}", "echo ok"]
@@ -148,6 +158,7 @@ def ssh_run(ip, user, port, command, jump_host_info=None, password=None):
         password: Optional SSH password for the target machine.
     """
     if password:
+        _require_sshpass()
         ssh_cmd = ["sshpass", "-p", password, "ssh",
                    "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10"]
         if jump_host_info:
@@ -156,6 +167,7 @@ def ssh_run(ip, user, port, command, jump_host_info=None, password=None):
         ssh_cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10"]
         if jump_host_info:
             if jump_host_info.get("password"):
+                _require_sshpass()
                 ssh_cmd += ["-o", f"ProxyCommand={_build_proxy_command(jump_host_info)}"]
             else:
                 jump_str = f"{jump_host_info['user']}@{jump_host_info['ip']}:{jump_host_info['port']}"

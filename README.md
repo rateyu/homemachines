@@ -20,6 +20,40 @@ A single-script tool to **wake**, **sleep**, **check status**, and **SSH tunnel*
   - Linux: `sudo apt install sshpass` / `sudo yum install sshpass`
 - No third-party Python packages needed
 
+## 前置依赖安装
+
+### macOS
+
+```bash
+# 1. 安装 Homebrew（已安装可跳过）
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# 2. 安装 sshpass（仅当机器使用密码认证时需要）
+brew install hudochenkov/sshpass/sshpass
+
+# 3. 验证
+sshpass -V
+ssh -V
+python3 --version
+```
+
+### Ubuntu / Debian
+
+```bash
+sudo apt update
+sudo apt install -y openssh-client sshpass python3
+```
+
+### CentOS / RHEL / Rocky Linux
+
+```bash
+sudo yum install -y openssh-clients sshpass python3
+# 或使用 dnf：
+sudo dnf install -y openssh-clients sshpass python3
+```
+
+> 安装完所有依赖后，执行 `python3 home_machines.py status all` 验证配置是否正确。
+
 ## Quick Start
 
 ### 1. Clone
