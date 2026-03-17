@@ -182,6 +182,23 @@ def ssh_run(ip, user, port, command, jump_host_info=None, password=None):
     return result
 
 
+def wait_for_ssh_port(ip, port, timeout=30, interval=1):
+    """Poll until the SSH TCP port accepts connections (max timeout seconds)."""
+    print(f"  Waiting for SSH port {ip}:{port}...", end="", flush=True)
+    elapsed = 0
+    while elapsed < timeout:
+        try:
+            with socket.create_connection((ip, port), timeout=2):
+                print(" ready!")
+                return True
+        except OSError:
+            print(".", end="", flush=True)
+            time.sleep(interval)
+            elapsed += interval
+    print(" timeout!")
+    return False
+
+
 def wait_for_host(ip, timeout=120, interval=5, ssh_cfg=None):
     """Wait until a host becomes reachable via ping (or SSH fallback).
 
@@ -296,8 +313,10 @@ def cmd_wake(machines, target):
                 if not wait_for_host(jh_cfg["ip"], ssh_cfg=jh_cfg):
                     print(f"  {name}: FAILED — jump host did not come online")
                     continue
-                # Give SSH service a moment to start
-                time.sleep(5)
+                # Wait for SSH service to be ready (poll instead of fixed sleep)
+                if not wait_for_ssh_port(jh_cfg["ip"], jh_cfg["ssh_port"]):
+                    print(f"  {name}: FAILED — jump host SSH port did not open")
+                    continue
 
             # Send WOL from jump host
             # Build a python one-liner to send magic packet from the jump host
